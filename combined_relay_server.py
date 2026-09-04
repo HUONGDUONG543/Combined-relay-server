@@ -73,6 +73,16 @@ from werkzeug.serving import WSGIRequestHandler
 
 app = Flask(__name__)
 
+
+# [uptime-fix] Route gốc "/" chỉ để trả 200 cho các dịch vụ giám sát uptime
+# (vd. UptimeRobot) - gói free của UptimeRobot không cho tuỳ chỉnh "Accepted
+# status codes" nên mặc định coi 404 là "Down", dù server thực ra vẫn sống
+# bình thường (firmware .ino không bao giờ gọi "/", chỉ gọi /search, /stream,
+# /random - route này không ảnh hưởng gì tới logic phát video).
+@app.route("/")
+def health_check():
+    return "OK", 200
+
 PORT = 8000  # 1 cổng duy nhất cho cả /search, /stream (YouTube + TikTok), /random
 
 # File danh sách link cho /random - tự soạn, mỗi dòng 1 link TikTok, dòng
