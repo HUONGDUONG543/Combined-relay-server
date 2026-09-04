@@ -67,6 +67,7 @@ import subprocess
 import shlex
 import random
 import os
+import traceback
 from flask import Flask, request, Response, jsonify
 import yt_dlp
 from werkzeug.serving import WSGIRequestHandler
@@ -184,7 +185,23 @@ def resolve_stream_urls(video_url, height_cap):
         # Muốn mở lại được định dạng nhỏ một cách ổn định, cần PO Token
         # provider (bgutil-ytdlp-pot-provider) chứ list client dự phòng chỉ
         # là biện pháp "hên xui" không tốn thêm hạ tầng.
-        "extractor_args": {"youtube": {"player_client": ["android", "tv", "ios", "web"]}},
+        # [render-ip-fix] Chạy trên IP datacenter (Render) dễ bị YouTube
+        # chặn/soft-block theo TỪNG client hơn hẳn IP nhà mạng thường - mở
+        # rộng danh sách client dự phòng (thêm mweb, android_music,
+        # web_embedded) để tăng khả năng còn ít nhất 1 client chưa bị chặn.
+        # Không đảm bảo hết bị chặn hoàn toàn (đó là vấn đề phía IP, xem
+        # ghi chú SABR ở đầu file) - đây chỉ tăng tỉ lệ thành công, không
+        # phải fix tuyệt đối.
+        "extractor_args": {
+            "youtube": {
+                "player_client": [
+                    "android", "ios", "tv", "mweb", "android_music",
+                    "web_embedded", "web",
+                ]
+            }
+        },
+        "geo_bypass": True,
+        "socket_timeout": 15,
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(video_url, download=False)
@@ -239,7 +256,13 @@ def stream():
     try:
         video_direct_url, audio_direct_url, video_headers, audio_headers = resolve_stream_urls(video_url, height_cap)
     except Exception as e:
+        # [debug] In cả traceback đầy đủ (không chỉ str(e)) - lỗi yt-dlp
+        # thường là 1 exception lồng nhau (DownloadError bọc ExtractorError
+        # bọc lý do thật, vd "Sign in to confirm you're not a bot") mà
+        # str(e) đôi khi cắt cụt. Xem log Render ngay sau dòng "resolve
+        # error" để biết lý do thật.
         print(f"[stream] resolve error: {e}")
+        traceback.print_exc()
         return Response(status=502)
 
     # "-re" ĐÃ BỎ (thử nghiệm): bug gốc là tràn số uint32_t trong
