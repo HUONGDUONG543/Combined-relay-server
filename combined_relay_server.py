@@ -86,6 +86,29 @@ def health_check():
 
 PORT = 8000  # 1 cổng duy nhất cho cả /search, /stream (YouTube + TikTok), /random
 
+# [bot-check-fix] IP datacenter (Render) bị YouTube chặn với lỗi "Sign in to
+# confirm you're not a bot" - cách khắc phục đáng tin cậy duy nhất là đưa
+# cho yt-dlp cookies của 1 tài khoản Google đã đăng nhập thật (xem hướng dẫn
+# xuất cookies.txt cuối file này). ĐỪNG commit cookies.txt vào git repo (ai
+# có cookies là đăng nhập được luôn tài khoản đó) - dùng tính năng "Secret
+# Files" của Render (Environment > Secret Files), nó tự mount vào đường dẫn
+# cố định /etc/secrets/<tên file> mà không lưu trong git. Nếu chưa thêm
+# Secret File, COOKIES_FILE sẽ không tồn tại và mọi thứ vẫn chạy như cũ
+# (không cookies) - không bắt buộc phải có mới chạy được server.
+COOKIES_FILE = "/etc/secrets/cookies.txt"
+
+# [debug] In ngay lúc server khởi động xem Secret File có thực sự được Render
+# mount vào đúng chỗ hay không - nếu log không thấy dòng này khi service
+# start lại, tức là chưa deploy code mới; nếu thấy "KHONG TIM THAY" thì lỗi
+# nằm ở bước tạo Secret File trên Render (sai tên file, hoặc chưa lưu).
+if os.path.exists(COOKIES_FILE):
+    _sz = os.path.getsize(COOKIES_FILE)
+    print(f"[cookies] TIM THAY {COOKIES_FILE} - kich thuoc {_sz} bytes")
+    if _sz < 200:
+        print("[cookies] CANH BAO: file qua nho, co the dan thieu noi dung hoac rong")
+else:
+    print(f"[cookies] KHONG TIM THAY {COOKIES_FILE} - Secret File chua duoc tao dung, hoac sai ten file")
+
 # File danh sách link cho /random - tự soạn, mỗi dòng 1 link TikTok, dòng
 # trống hoặc bắt đầu bằng "#" bị bỏ qua (dùng để ghi chú). Cùng thư mục với
 # file này trừ khi bạn đổi thành đường dẫn tuyệt đối.
@@ -124,6 +147,8 @@ def search():
         "extract_flat": "in_playlist",
         "skip_download": True,
     }
+    if os.path.exists(COOKIES_FILE):
+        ydl_opts["cookiefile"] = COOKIES_FILE
     results = []
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -203,6 +228,8 @@ def resolve_stream_urls(video_url, height_cap):
         "geo_bypass": True,
         "socket_timeout": 15,
     }
+    if os.path.exists(COOKIES_FILE):
+        ydl_opts["cookiefile"] = COOKIES_FILE
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(video_url, download=False)
         if "entries" in info:  # ytsearch1:... trả về playlist 1 phần tử
