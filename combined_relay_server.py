@@ -86,16 +86,24 @@ def health_check():
 
 PORT = 8000  # 1 cổng duy nhất cho cả /search, /stream (YouTube + TikTok), /random
 
-# [bot-check-fix] IP datacenter (Render) bị YouTube chặn với lỗi "Sign in to
-# confirm you're not a bot" - cách khắc phục đáng tin cậy duy nhất là đưa
-# cho yt-dlp cookies của 1 tài khoản Google đã đăng nhập thật (xem hướng dẫn
-# xuất cookies.txt cuối file này). ĐỪNG commit cookies.txt vào git repo (ai
-# có cookies là đăng nhập được luôn tài khoản đó) - dùng tính năng "Secret
-# Files" của Render (Environment > Secret Files), nó tự mount vào đường dẫn
-# cố định /etc/secrets/<tên file> mà không lưu trong git. Nếu chưa thêm
-# Secret File, COOKIES_FILE sẽ không tồn tại và mọi thứ vẫn chạy như cũ
-# (không cookies) - không bắt buộc phải có mới chạy được server.
-COOKIES_FILE = "/etc/secrets/cookies.txt"
+# [bot-check-fix] IP datacenter (Render, Codespaces, ...) bị YouTube chặn với
+# lỗi "Sign in to confirm you're not a bot" - cách khắc phục đáng tin cậy duy
+# nhất là đưa cho yt-dlp cookies của 1 tài khoản Google đã đăng nhập thật (xem
+# hướng dẫn xuất cookies.txt cuối file này). ĐỪNG commit cookies.txt vào git
+# repo (ai có cookies là đăng nhập được luôn tài khoản đó) - nhớ thêm dòng
+# "cookies.txt" vào file .gitignore của repo.
+#
+# - Trên Render: có thể dùng "Secret Files" (Environment > Secret Files), nó
+#   tự mount vào /etc/secrets/<tên file> mà không lưu trong git - nếu dùng
+#   cách đó thì đổi biến COOKIES_FILE bên dưới lại thành
+#   "/etc/secrets/cookies.txt".
+# - Trên Codespaces (không có Secret Files): đặt file cookies.txt cùng thư
+#   mục với file .py này (upload thủ công qua Explorer, KHÔNG qua git) -
+#   COOKIES_FILE bên dưới sẽ tự tìm đúng chỗ đó.
+#
+# Nếu COOKIES_FILE không tồn tại, mọi thứ vẫn chạy như cũ (không cookies) -
+# không bắt buộc phải có mới chạy được server.
+COOKIES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.txt")
 
 # [debug] In ngay lúc server khởi động xem Secret File có thực sự được Render
 # mount vào đúng chỗ hay không - nếu log không thấy dòng này khi service
