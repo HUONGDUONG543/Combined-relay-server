@@ -68,6 +68,11 @@ import shlex
 import random
 import os
 import traceback
+import json
+import re
+import html
+import urllib.request
+import urllib.parse
 from flask import Flask, request, Response, jsonify
 import yt_dlp
 from werkzeug.serving import WSGIRequestHandler
@@ -142,12 +147,67 @@ def format_duration(seconds):
     return f"{m}:{s:02d}"
 
 
+# [api-key] Key YouTube Data API v3 đọc từ biến môi trường YOUTUBE_API_KEY
+# (Render > Environment) - KHÔNG hardcode key vào file này/git. Chỉ dùng cho
+# /search (API key không bị "bot check" như yt-dlp trên IP datacenter). Phần
+# /stream vẫn dùng yt-dlp vì Data API không trả link luồng video.
+# Quota: mỗi lần search.list tốn 100 đơn vị, mặc định 10.000/ngày (~100 lượt
+# tìm/ngày). Hết quota hoặc key lỗi -> tự rơi về yt-dlp như cũ.
+YT_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
+
+
+def _api_get(endpoint, params):
+    params = dict(params, key=YT_API_KEY)
+    url = f"https://www.googleapis.com/youtube/v3/{endpoint}?" + urllib.parse.urlencode(params)
+    with urllib.request.urlopen(url, timeout=10) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def _iso_duration_to_seconds(d):
+    m = re.fullmatch(r"P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?", d or "")
+    if not m:
+        return 0
+    days, hrs, mins, secs = (int(x) if x else 0 for x in m.groups())
+    return days * 86400 + hrs * 3600 + mins * 60 + secs
+
+
+def search_via_api(query, n):
+    data = _api_get("search", {
+        "part": "snippet", "type": "video", "maxResults": n, "q": query,
+    })
+    items = data.get("items", [])
+    ids = [it["id"]["videoId"] for it in items if it.get("id", {}).get("videoId")]
+    durations = {}
+    if ids:
+        vids = _api_get("videos", {"part": "contentDetails", "id": ",".join(ids)})
+        for v in vids.get("items", []):
+            durations[v["id"]] = _iso_duration_to_seconds(v["contentDetails"].get("duration"))
+    return [
+        {
+            "id": vid,
+            "title": html.unescape(it["snippet"]["title"]),
+            "duration": format_duration(durations.get(vid)),
+        }
+        for it in items
+        for vid in [it["id"]["videoId"]]
+        if it.get("id", {}).get("videoId")
+    ]
+
+
 @app.route("/search")
 def search():
     query = request.args.get("q", "")
     n = int(request.args.get("n", 5))
     if not query:
         return jsonify([])
+
+    if YT_API_KEY:
+        try:
+            res = search_via_api(query, n)
+            print(f"[search] YouTube API OK: {len(res)} ket qua")
+            return jsonify(res)
+        except Exception as e:
+            print(f"[search] YouTube API loi ({e}) - roi ve yt-dlp")
 
     ydl_opts = {
         "quiet": True,
