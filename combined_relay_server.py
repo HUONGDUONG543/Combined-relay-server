@@ -108,7 +108,14 @@ PORT = 8000  # 1 cổng duy nhất cho cả /search, /stream (YouTube + TikTok),
 #
 # Nếu COOKIES_FILE không tồn tại, mọi thứ vẫn chạy như cũ (không cookies) -
 # không bắt buộc phải có mới chạy được server.
+_SECRET_COOKIES = "/etc/secrets/cookies.txt"
 COOKIES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.txt")
+if os.path.exists(_SECRET_COOKIES):
+    # Secret Files của Render là read-only, mà yt-dlp cố ghi lại cookie jar
+    # khi kết thúc -> copy sang /tmp (ghi được) rồi dùng bản copy.
+    import shutil
+    shutil.copyfile(_SECRET_COOKIES, "/tmp/cookies.txt")
+    COOKIES_FILE = "/tmp/cookies.txt"
 
 # [debug] In ngay lúc server khởi động xem Secret File có thực sự được Render
 # mount vào đúng chỗ hay không - nếu log không thấy dòng này khi service
@@ -343,6 +350,13 @@ def stream():
     w = request.args.get("w", "320")
     h = request.args.get("h", "170")
     height_cap = request.args.get("height_cap", "360")
+    # [lag-fix] YouTube không có định dạng nào dưới 144p, nên height_cap=100
+    # không khớp gì và yt-dlp rơi xuống "/best" (thường 360p trở lên) -> ffmpeg
+    # trên CPU yếu của Render phải giải mã quá nặng. Ép tối thiểu 144p.
+    try:
+        height_cap = str(max(int(height_cap), 144))
+    except ValueError:
+        height_cap = "144"
     fps = request.args.get("fps", "15")
 
     if not video_url:
@@ -399,7 +413,7 @@ def stream():
             f"{RECONNECT_ARGS}{audio_headers_arg}-i {shlex.quote(audio_direct_url)} "
             f"-map 0:v:0 -map 1:a:0 "
             f"{THREADS_ARG}"
-            f"-vf scale={w}:{h},fps={fps} "
+            f"-vf scale={w}:{h}:flags=fast_bilinear,fps={fps} "
             # [perf] q:v 20 (tăng từ 16, tăng từ 12 gốc): log Serial cho
             # thấy đỉnh (max) của videoPayloadRead/drawJpg cao gấp 3-4 lần
             # trung bình - đúng lúc cảnh có nhiều chuyển động/chi tiết, khung
@@ -419,7 +433,7 @@ def stream():
         cmd = (
             f"ffmpeg -v error {RECONNECT_ARGS}{video_headers_arg}-i {shlex.quote(video_direct_url)} "
             f"{THREADS_ARG}"
-            f"-vf scale={w}:{h},fps={fps} "
+            f"-vf scale={w}:{h}:flags=fast_bilinear,fps={fps} "
             f"-c:v mjpeg -q:v 20 "  # [perf] tăng từ 16, xem giải thích ở nhánh có audio phía trên
             f"-c:a pcm_s16le -ar 16000 -ac 1 "
             f"-f avi pipe:1"
