@@ -167,6 +167,7 @@ YT_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
 #   AUDIO_RATE : tần số lấy mẫu audio, 16000 -> ~32KB/s, 11025 -> ~22KB/s, 8000 -> ~16KB/s
 # Firmware đọc audioRate từ AVI header nên không cần nạp lại .ino.
 MJPEG_Q = os.environ.get("MJPEG_Q", "20")
+FFMPEG_THREADS = os.environ.get("FFMPEG_THREADS", "1")
 AUDIO_RATE = os.environ.get("AUDIO_RATE", "16000")
 
 
@@ -411,13 +412,16 @@ def stream():
     # thoại - đây là chỗ có khả năng cao nhất đang là nút thắt CPU thực sự
     # (không phải mạng - đã đo mạng nhà đủ nhanh), vì trước đó ffmpeg chỉ
     # chạy 1 nhân trong khi máy có 6-8 nhân rảnh.
-    THREADS_ARG = "-threads 0 "
+    # [lag-fix] Mặc định 1 luồng. "-threads 0" (= số nhân của MÁY CHỦ) hợp với điện thoại 6-8 nhân nhưng trên
+    # container Render chỉ được cấp 0.1-0.5 CPU thì nhiều luồng cùng đốt hết hạn mức CPU rồi bị hệ điều hành
+    # "phanh" cả loạt -> dữ liệu ra thành từng cục, ngắt quãng, board thấy giật. Đổi bằng biến FFMPEG_THREADS.
+    THREADS_ARG = f"-threads {FFMPEG_THREADS} "
 
     if audio_direct_url:
         cmd = (
             f"ffmpeg -v error "
-            f"{RECONNECT_ARGS}{video_headers_arg}-i {shlex.quote(video_direct_url)} "
-            f"{RECONNECT_ARGS}{audio_headers_arg}-i {shlex.quote(audio_direct_url)} "
+            f"{RECONNECT_ARGS}{video_headers_arg}{THREADS_ARG}-i {shlex.quote(video_direct_url)} "
+            f"{RECONNECT_ARGS}{audio_headers_arg}{THREADS_ARG}-i {shlex.quote(audio_direct_url)} "
             f"-map 0:v:0 -map 1:a:0 "
             f"{THREADS_ARG}"
             f"-vf scale={w}:{h}:flags=fast_bilinear,fps={fps} "
@@ -438,7 +442,7 @@ def stream():
         )
     else:
         cmd = (
-            f"ffmpeg -v error {RECONNECT_ARGS}{video_headers_arg}-i {shlex.quote(video_direct_url)} "
+            f"ffmpeg -v error {RECONNECT_ARGS}{video_headers_arg}{THREADS_ARG}-i {shlex.quote(video_direct_url)} "
             f"{THREADS_ARG}"
             f"-vf scale={w}:{h}:flags=fast_bilinear,fps={fps} "
             f"-c:v mjpeg -q:v {MJPEG_Q} "  # [perf] tăng từ 16, xem giải thích ở nhánh có audio phía trên
