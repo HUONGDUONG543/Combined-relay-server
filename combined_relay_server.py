@@ -162,6 +162,13 @@ def format_duration(seconds):
 # tìm/ngày). Hết quota hoặc key lỗi -> tự rơi về yt-dlp như cũ.
 YT_API_KEY = os.environ.get("YOUTUBE_API_KEY", "")
 
+# [low-bw] Băng thông luồng phát chỉnh được bằng Environment trên Render (không cần sửa code):
+#   MJPEG_Q    : độ nén JPEG của ffmpeg, số càng lớn ảnh càng mờ và càng nhẹ (mặc định 20)
+#   AUDIO_RATE : tần số lấy mẫu audio, 16000 -> ~32KB/s, 11025 -> ~22KB/s, 8000 -> ~16KB/s
+# Firmware đọc audioRate từ AVI header nên không cần nạp lại .ino.
+MJPEG_Q = os.environ.get("MJPEG_Q", "20")
+AUDIO_RATE = os.environ.get("AUDIO_RATE", "16000")
+
 
 def _api_get(endpoint, params):
     params = dict(params, key=YT_API_KEY)
@@ -421,12 +428,12 @@ def stream():
             # đột ngột (giật nặng đúng khi hành động nhanh). Nén thêm ở mọi
             # khung (kể cả khung tĩnh) để hạ luôn kích thước khung "khó",
             # giảm biên độ đỉnh - đổi lại hình mờ hơn 1 chút liên tục.
-            f"-c:v mjpeg -q:v 20 "
+            f"-c:v mjpeg -q:v {MJPEG_Q} "
             # 16000Hz mono 16-bit (~32000 Bps) thay vì 22050/44100Hz: máy
             # Termux không đủ CPU/băng thông để encode/tải kịp mức cao hơn,
             # gây underrun audio định kỳ. Firmware tự đọc audioRate/audioBits
             # từ AVI header ffmpeg tạo ra, không hardcode ở .ino.
-            f"-c:a pcm_s16le -ar 16000 -ac 1 "
+            f"-c:a pcm_s16le -ar {AUDIO_RATE} -ac 1 "
             f"-f avi pipe:1"
         )
     else:
@@ -434,8 +441,8 @@ def stream():
             f"ffmpeg -v error {RECONNECT_ARGS}{video_headers_arg}-i {shlex.quote(video_direct_url)} "
             f"{THREADS_ARG}"
             f"-vf scale={w}:{h}:flags=fast_bilinear,fps={fps} "
-            f"-c:v mjpeg -q:v 20 "  # [perf] tăng từ 16, xem giải thích ở nhánh có audio phía trên
-            f"-c:a pcm_s16le -ar 16000 -ac 1 "
+            f"-c:v mjpeg -q:v {MJPEG_Q} "  # [perf] tăng từ 16, xem giải thích ở nhánh có audio phía trên
+            f"-c:a pcm_s16le -ar {AUDIO_RATE} -ac 1 "
             f"-f avi pipe:1"
         )
 
